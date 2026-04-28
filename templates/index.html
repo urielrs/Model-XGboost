@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>XGBoost Crimson Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    :root { --primary-red: #dc2626; --dark-red: #7f1d1d; --bg-black: #0a0a0a; --card-bg: #171717; --text-gray: #e5e5e5; }
+    * { box-sizing: border-box; font-family: 'Segoe UI', sans-serif; }
+    body { margin: 0; background: var(--bg-black); color: var(--text-gray); display: flex; min-height: 100vh; }
+    aside { width: 380px; background: #111; border-right: 2px solid var(--dark-red); padding: 30px 20px; overflow-y: auto; }
+    main { flex-grow: 1; padding: 40px; overflow-y: auto; }
+    header { border-bottom: 1px solid var(--dark-red); padding-bottom: 20px; margin-bottom: 30px; }
+    header h1 { color: var(--primary-red); font-size: 28px; margin: 0; text-transform: uppercase; }
+    .card { background: var(--card-bg); border: 1px solid #333; border-radius: 12px; padding: 20px; margin-bottom: 20px; }
+    .tipo { background: var(--dark-red); color: white; padding: 4px 10px; border-radius: 4px; font-size: 11px; text-transform: uppercase; }
+    button { width: 100%; background: var(--primary-red); color: white; border: none; padding: 12px; border-radius: 6px; font-weight: bold; cursor: pointer; margin-top: 15px; }
+    button:hover { background: #b91c1c; }
+    .form-group { margin-bottom: 10px; }
+    label { display: block; font-size: 11px; color: #888; text-transform: uppercase; margin-bottom: 4px; }
+    input { width: 100%; background: #000; border: 1px solid #444; color: white; padding: 8px; border-radius: 4px; }
+    .metricas { display: flex; gap: 15px; margin-bottom: 30px; }
+    .metrica { flex: 1; background: #1a1a1a; border-left: 4px solid var(--primary-red); padding: 20px; border-radius: 8px; }
+    .metrica p { font-size: 24px; color: #fff; margin: 10px 0 0; font-weight: bold; }
+    .graficas-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 25px; }
+    .grafica-card { background: var(--card-bg); border-radius: 15px; padding: 20px; border: 1px solid #222; }
+    table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 13px; }
+    th { background: var(--dark-red); color: white; padding: 10px; text-align: left; }
+    td { padding: 8px; border-bottom: 1px solid #222; }
+    .loading { color: var(--primary-red); font-weight: bold; text-align: center; padding: 50px; display: none; }
+    .oculto { display: none; }
+    #resCredito { margin-top: 15px; padding: 15px; border-radius: 8px; background: #000; border: 1px solid var(--primary-red); }
+  </style>
+</head>
+<body>
+
+<aside>
+  <h2 style="color:white; margin-bottom: 25px;">Modelos Disponibles</h2>
+  {% for id, modelo in modelos.items() %}
+  <div class="card">
+    <span class="tipo">{{ modelo.tipo }}</span>
+    <h3 style="margin: 10px 0;">{{ modelo.nombre }}</h3>
+    <button onclick="ejecutarModelo('{{ id }}')">Lanzar Análisis</button>
+  </div>
+  {% endfor %}
+
+  <div class="card" style="border-color: var(--dark-red);">
+    <h3 style="color: var(--primary-red); margin-top: 0;">Simulador de Riesgo</h3>
+    <div class="form-group"><label>Límite Crédito</label><input type="number" id="limit_bal" value="50000"></div>
+    <div class="form-group"><label>Edad (18-80)</label><input type="number" id="age" value="30"></div>
+    <div class="form-group"><label>Estatus Pago M1</label><input type="number" id="pay_0" value="0"></div>
+    <div class="form-group"><label>Estatus Pago M2</label><input type="number" id="pay_2" value="0"></div>
+    <div class="form-group"><label>Monto Factura</label><input type="number" id="bill_amt1" value="2000"></div>
+    <div class="form-group"><label>Monto Pagado</label><input type="number" id="pay_amt1" value="500"></div>
+    <button onclick="evaluarCredito()" style="background: #444;">Evaluar Inferencia</button>
+    <div id="resCredito" class="oculto">
+      <div id="riesgoTexto" style="font-weight: bold; font-size: 16px;"></div>
+      <div id="probTexto" style="font-size: 13px; color: #aaa;"></div>
+    </div>
+  </div>
+</aside>
+
+<main>
+  <header>
+    <h1 id="nombreModelo">Dashboard Principal</h1>
+    <p id="descripcionModelo" style="color: #666;">Seleccione un modelo para ver el análisis.</p>
+  </header>
+
+  <div id="loading" class="loading">PROCESANDO DATOS...</div>
+
+  <div id="dashboard" class="oculto">
+    <div class="metricas" id="metricasContainer">
+      <div class="metrica"><h3 id="m1T" style="margin:0; font-size:12px; color:#888;">--</h3><p id="m1">--</p></div>
+      <div class="metrica"><h3 id="m2T" style="margin:0; font-size:12px; color:#888;">--</h3><p id="m2">--</p></div>
+      <div class="metrica"><h3 id="m3T" style="margin:0; font-size:12px; color:#888;">--</h3><p id="m3">--</p></div>
+      <div class="metrica"><h3 id="m4T" style="margin:0; font-size:12px; color:#888;">--</h3><p id="m4">--</p></div>
+    </div>
+
+    <div class="graficas-grid">
+      <div class="grafica-card"><h3>Feature Importance</h3><canvas id="cImp"></canvas></div>
+      <div class="grafica-card"><h3>Resultados</h3><canvas id="cRes"></canvas></div>
+    </div>
+
+    <div class="grafica-card" style="margin-top: 25px;">
+      <h3 id="tituloTabla">Detalle de Datos</h3>
+      <div id="tablaContenedor"></div>
+    </div>
+  </div>
+</main>
+
+<script>
+  let charts = {};
+
+  async function ejecutarModelo(id) {
+    document.getElementById("loading").style.display = "block";
+    document.getElementById("dashboard").classList.add("oculto");
+    
+    try {
+        const res = await fetch("/modelo/" + id);
+        const data = await res.json();
+        const r = data.resultados;
+        
+        document.getElementById("loading").style.display = "none";
+        document.getElementById("dashboard").classList.remove("oculto");
+        document.getElementById("nombreModelo").textContent = data.nombre;
+        document.getElementById("descripcionModelo").textContent = data.descripcion;
+
+        const l = r.tipo === "clasificacion" ? ["Accuracy", "Precision", "Recall", "F1"] : ["MAE", "MSE", "RMSE", "R²"];
+        const v = r.tipo === "clasificacion" ? [r.accuracy+"%", r.precision+"%", r.recall+"%", r.f1+"%"] : [r.mae, r.mse, r.rmse, r.r2+"%"];
+        for(let i=0; i<4; i++){
+          document.getElementById(`m${i+1}T`).textContent = l[i];
+          document.getElementById(`m${i+1}`).textContent = v[i];
+        }
+
+        if(charts.imp) charts.imp.destroy();
+        charts.imp = new Chart(document.getElementById("cImp"), {
+          type: 'bar',
+          data: { labels: r.features, datasets: [{ data: r.importancias, backgroundColor: '#dc2626' }] },
+          options: { indexAxis: 'y', plugins: { legend: { display: false } } }
+        });
+
+        if(charts.res) charts.res.destroy();
+        if(r.tipo === "clasificacion"){
+          charts.res = new Chart(document.getElementById("cRes"), {
+            type: 'pie',
+            data: { labels: r.clases, datasets: [{ data: r.conteo_predicciones, backgroundColor: ['#7f1d1d','#dc2626','#ef4444','#f87171'] }] }
+          });
+          renderTablaClasificacion(r.matriz, r.clases);
+        } else {
+          charts.res = new Chart(document.getElementById("cRes"), {
+            type: 'line',
+            data: { labels: r.reales.map((_,i)=>i), datasets: [{label:'Real', data:r.reales, borderColor:'#fff'}, {label:'Pred', data:r.predichos, borderColor:'#dc2626'}] }
+          });
+          renderTablaRegresion(r.reales, r.predichos);
+        }
+    } catch(e) { console.error(e); alert("Error al procesar el modelo."); }
+  }
+
+  async function evaluarCredito() {
+    const age = document.getElementById("age").value;
+    if (age < 18 || age > 80) { alert("⚠️ Error: La edad debe estar entre 18 y 80 años."); return; }
+
+    const payload = {
+      limit_bal: document.getElementById("limit_bal").value,
+      age: age,
+      pay_0: document.getElementById("pay_0").value,
+      pay_2: document.getElementById("pay_2").value,
+      bill_amt1: document.getElementById("bill_amt1").value,
+      pay_amt1: document.getElementById("pay_amt1").value
+    };
+
+    try {
+        const res = await fetch("/evaluar_credito", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        
+        if (data.error) { alert(data.error); return; }
+
+        const box = document.getElementById("resCredito");
+        box.classList.remove("oculto");
+        document.getElementById("riesgoTexto").textContent = data.riesgo;
+        document.getElementById("riesgoTexto").style.color = data.riesgo === "Riesgo alto" ? "#dc2626" : "#22c55e";
+        document.getElementById("probTexto").textContent = `Confianza: ${data.probabilidad}%`;
+    } catch(e) { console.error(e); alert("Error al conectar con el servidor."); }
+  }
+
+  function renderTablaClasificacion(matriz, clases) {
+    let html = `<table><tr><th>Real \\ Pred</th>` + clases.map(c => `<th>${c}</th>`).join('') + `</tr>`;
+    matriz.forEach((f, i) => {
+      html += `<tr><td><strong>${clases[i]}</strong></td>` + f.map(v => `<td>${v}</td>`).join('') + `</tr>`;
+    });
+    document.getElementById("tablaContenedor").innerHTML = html + "</table>";
+  }
+
+  function renderTablaRegresion(reales, predichos) {
+    let html = `<table><tr><th>#</th><th>Real</th><th>Predicho</th><th>Error</th></tr>`;
+    reales.forEach((r, i) => {
+      html += `<tr><td>${i+1}</td><td>${r}</td><td>${predichos[i]}</td><td>${Math.abs(r-predichos[i]).toFixed(2)}</td></tr>`;
+    });
+    document.getElementById("tablaContenedor").innerHTML = html + "</table>";
+  }
+</script>
+</body>
+</html>
