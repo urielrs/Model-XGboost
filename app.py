@@ -1,4 +1,4 @@
-from flask import Flask, render_template, jsonify, request, os
+from flask import Flask, render_template, jsonify, request
 from sklearn.datasets import (
     load_breast_cancer, load_iris, load_wine, 
     load_digits, load_diabetes, fetch_california_housing,
